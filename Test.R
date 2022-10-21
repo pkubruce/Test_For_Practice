@@ -1729,3 +1729,188 @@ anscombe %>%
 # ".value" indicates that the corresponding component of the 
 # column name defines the name of the output column containing 
 # the cell values, overriding values_to entirely.
+
+# 分面图绘制截断--------------
+# 加载包
+library(jjAnno)
+library(ggplot2)
+library(ggh4x)
+library(patchwork)
+library(ggprism)
+library(grid)
+library(gridExtra)
+library(ggsci)
+library(tidyverse)
+library(RColorBrewer)
+library(cowplot)
+library(showtext)
+# 构建数据
+df0 <- data.frame(x = seq(1,10,1),
+                  y = seq(1,10,1),
+                  group = "A",
+                  biggroup = "a")
+df1 <- data.frame(x = seq(1,10,1),
+                  y = seq(1,10,1)+50,
+                  group = "B",
+                  biggroup = "b")
+df2 <- data.frame(x = seq(1,10,1),
+                  y = seq(1,10,1)+60,
+                  group = "C",
+                  biggroup = "b")
+df3 <- data.frame(x = seq(1,10,1),
+                  y = seq(1,10,1)+1000,
+                  group = "D",
+                  biggroup = "c")
+# group用来分组
+# biggroup用来分面
+df <- rbind(rbind(df0,df1),rbind(df2,df3))
+
+df$biggroup <- factor(df$biggroup,c("c","b","a"))
+# 画图
+ggplot(data = df,mapping = aes(x=x,y=y))+
+  geom_point(aes(color = group))+ # 不同group不同颜色
+  geom_line(aes(color = group))+ 
+  facet_wrap2(biggroup~., ncol = 1, scales = "free_y")+ #来源于ggh4x，scales设置free为了下面能调整每个分面情况
+  facetted_pos_scales(y = list(biggroup=="a"~scale_y_continuous(limits = c(0,10),
+                                                                breaks = seq(0,10,2.5),
+                                                                expand = c(0,0)),
+                               biggroup=="b"~scale_y_continuous(limits = c(50,70),
+                                                                breaks = seq(50,70,5),
+                                                                expand = c(0,0)),
+                               biggroup=="c"~scale_y_continuous(limits = c(1000,1010),
+                                                                breaks = seq(1000,1010,2.5),
+                                                                expand = c(0,0))))+
+  # ggh4x函数，自由调整每个分面坐标轴
+  theme_prism(base_size = 10)+ # 设置边界大小
+  theme(strip.text = element_blank(), # 删除分面的标签
+        panel.spacing.y = unit(0.5,"cm")) # 设置分面距离
+
+# sas data selected-----------------
+df <- read.csv("sas_hapc/data_6_1974_2006.csv")
+library(tidyverse)
+df %>% filter(YEAR %in% seq(1974,2006,2) & 
+                !is.na(AGE) &
+                !is.na(RACE) &
+                !is.na(WORDSUM) &
+                RACE != 3 &
+                !is.na(SEX) &
+                !is.na(YEAR) &
+                !is.na(EDUC)) -> df2
+df2$C = df2$YEAR-df2$AGE
+df2 %>% filter(C %in% c(1894,seq(1895,1985,5))) -> df2
+df2 %>% mutate(
+  SEX = SEX-1,
+  RACE = RACE-1
+)->df2
+
+# install.packages("sjPlot")
+library(sjPlot)
+
+# install.packages("emmeans")
+tab_itemscale(df2)
+names(df2)[c(1,7)] <- c("Period","Cohort")
+names(table(df2$Period))
+names(table(df2$Cohort))
+write.csv(df2,file = "sas_hapc/end.csv")
+
+df2 %>% mutate(
+  Period = factor(as.character(Period)),
+  Cohort = factor(as.character(Cohort))
+) ->df2 # 因子化 # 很重要的步骤
+
+df2$AGE <- df2$AGE-46
+df2$AGE2 <- (df2$AGE)^2 #必须有
+
+library(lme4)
+lmer(data = df2,
+     formula = WORDSUM~AGE+AGE2+EDUC+SEX+RACE+
+       (1|Period)+
+       (1|Cohort))->lm1 # 构造分层模型
+summary(lm1)->sumlm1
+sumlm1
+coefficients(lm1)->coeflm1
+coeflm1$Period[1]-1.9092314
+coeflm1$Cohort[1]-1.9092314
+tab_model(lm1)
+library(nlme)
+random.effects(lm1)
+
+# install.packages("lmerTest")
+library(lmerTest)
+ranova(lm1)
+anova(lm1)
+
+
+# install.packages("broom.mixed")
+library(broom.mixed)
+tidy(lm1,conf.int=TRUE,exponentiate=TRUE,effects="ran_vals")->random_df
+random_df # 可以计算标准差，但不能计算t检验
+glance(lm1)
+augment(lm1)
+
+effectsize::omega_squared(lm1)
+effectsize::eta_squared(lm1)
+library(mixedup)
+
+extract_random_effects(lm1,digits = 4)# 和tidy那个结果一样
+extract_random_coefs(lm1) 
+
+tidy(lm1,conf.int=TRUE,exponentiate=TRUE,effects="ran_vals") # 和上面一样
+
+# myd datas---------------
+library(openxlsx)
+df <- read.xlsx("testfrom_myd.xlsx")
+names(df)[c(1,6,7)] <- c("country","year2018","year2019")
+name_country <- df$country[1]
+for (i in 1:length(df$country)) {
+  if(is.na(df$country[i])){df$country[i] <- name_country}
+  else{name_country <- df$country[i]}
+}
+df %>% filter((!is.na(X2) | !is.na(X3) | !is.na(X4)))->df
+
+write.csv(df,"testfrommyd.csv")
+
+
+# plots of points and lines-------------
+library(ggplot2)
+library(tidyverse)
+library(ggprism)
+library(ggtext)
+data(iris)
+
+iris %>% filter(Species %in% c("setosa","versicolor") &
+                  Sepal.Length <=5.5 &
+                  Sepal.Width <=3.0) -> iris_sub
+
+min(iris_sub$Sepal.Length)
+max(iris_sub$Sepal.Length)
+
+ggplot(iris_sub, aes(x=Sepal.Length, y=Sepal.Width))+
+  geom_abline(intercept = -5, slope = 1.5, lty = 2, size = 1)+
+  geom_abline(intercept = 10, slope = -1.5, lty = 2, size = 1)+
+  geom_hline(yintercept = 2.5, size = 1)+
+  geom_vline(xintercept = 5, lty = 2, size = 1)+
+  geom_richtext(mapping = aes( x = 6.0, y = 2.5, label = "WORDS"),
+                label.colour = "white")+
+  geom_point(aes(color = Species), size = 4)+
+  scale_x_continuous(limits = c(4.2,6.2))+
+  theme_prism(border = T)+
+  theme(panel.background = element_rect(fill = "#c6dbef"))
+
+
+# kmeans try-----------
+# stats::kmeans
+x <- rbind(matrix(rnorm(100, sd = 0.3), ncol = 2),
+           matrix(rnorm(100, mean = 1, sd = 0.3), ncol = 2))
+colnames(x) <- c("x", "y")
+(cl <- kmeans(x, 2))
+plot(x, col = cl$cluster)
+points(cl$centers, col = 1:2, pch = 8, cex = 2)
+# cluster
+library(cluster)
+x <- rbind(cbind(rnorm(10,0,0.5), rnorm(10,0,0.5)),
+           cbind(rnorm(15,5,0.5), rnorm(15,5,0.5)))
+x <- as.data.frame(x)
+pamx <- pam(x, 2)
+pamx$clustering
+x$cluster <- pamx$clustering
